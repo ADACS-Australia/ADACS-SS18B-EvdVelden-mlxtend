@@ -22,17 +22,23 @@ from ..utils.base_compostion import _BaseXComposition
 from sklearn.model_selection import cross_val_score
 from joblib import Parallel, delayed
 
+def permit_estimator_override(est, func):
+    est_atr = getattr(est, func.__name__, None)
+    if callable(est_atr):
+        return est_atr
+    else:
+        return func
 
 def _calc_score(selector, X, y, indices, groups=None, **fit_params):
     if selector.cv:
-        scores = cross_val_score(selector.est_,
-                                 X[:, indices], y,
-                                 groups=groups,
-                                 cv=selector.cv,
-                                 scoring=selector.scorer,
-                                 n_jobs=1,
-                                 pre_dispatch=selector.pre_dispatch,
-                                 fit_params=fit_params)
+        scores = permit_estimator_override(selector.est_, cross_val_score)(selector.est_,
+                                                                           X[:, indices], y,
+                                                                           groups=groups,
+                                                                           cv=selector.cv,
+                                                                           scoring=selector.scorer,
+                                                                           n_jobs=1,
+                                                                           pre_dispatch=selector.pre_dispatch,
+                                                                           fit_params=fit_params)
     else:
         selector.est_.fit(X[:, indices], y, **fit_params)
         scores = np.array([selector.scorer(selector.est_, X[:, indices], y)])
@@ -530,8 +536,8 @@ class SequentialFeatureSelector(_BaseXComposition, MetaEstimatorMixin):
         if remaining:
             features = len(remaining)
             n_jobs = min(self.n_jobs, features)
-            parallel = Parallel(n_jobs=n_jobs, verbose=self.verbose,
-                                pre_dispatch=self.pre_dispatch)
+            parallel = permit_estimator_override(self, Parallel)(n_jobs=n_jobs, verbose=self.verbose,
+                                                                 pre_dispatch=self.pre_dispatch)
             work = parallel(delayed(_calc_score)
                             (self, X, y,
                              tuple(subset | {feature}),
@@ -560,8 +566,8 @@ class SequentialFeatureSelector(_BaseXComposition, MetaEstimatorMixin):
             all_subsets = []
             features = n
             n_jobs = min(self.n_jobs, features)
-            parallel = Parallel(n_jobs=n_jobs, verbose=self.verbose,
-                                pre_dispatch=self.pre_dispatch)
+            parallel = permit_estimator_override(self, Parallel)(n_jobs=n_jobs, verbose=self.verbose,
+                                                                 pre_dispatch=self.pre_dispatch)
             work = parallel(delayed(_calc_score)(self, X, y, p,
                                                  groups=groups, **fit_params)
                             for p in combinations(feature_set, r=n - 1)
